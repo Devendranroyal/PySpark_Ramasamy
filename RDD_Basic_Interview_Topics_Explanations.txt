@@ -1,0 +1,128 @@
+Cluster Manager Types:
+
+Standalone – a simple cluster manager included with Spark that makes it easy to set up a cluster.
+Apache Mesos – Mesons is a Cluster manager that can also run Hadoop MapReduce and PySpark applications.
+Hadoop YARN – the resource manager in Hadoop 2. This is mostly used, cluster manager.
+Kubernetes – an open-source system for automating deployment, scaling, and management of containerized applications.
+local – which is not really a cluster manager but still I wanted to mention as we use “local” for master() in order to run Spark on your laptop/computer.
+
+
+https://github.com/AlexIoannides/pyspark-example-project/blob/master/jobs/etl_job.py
+
+
+https://github.com/mohanakrishnavh/PySpark-Tutorial
+
+How does Spark achieve Fault tolerance?
+=================================
+
+RDD Provides Fault Tolerance Through Lineage Graph.
+
+A Lineage Graph keeps A Track of Transformations to be executed after an action has been called.
+
+RDD Lineage Graph helps Recomputed any missing or damaged RDD because of node failures.
+
+RDD1
+|
+| Map
+|
+RDD2
+|
+| Filter
+|
+RDD3
+
+If Rdd3 is lost then it will check for its parent RDD using the lineage graph and it will quickly apply
+the transformation(here it is filtered) on rdd2.
+=> In HDFS we get resiliency(Fault tolerance) by using the replication factor.
+=> In RDD we get resiliency by using a lineage graph.
+
+Immutability + Lineage(Dag) provides spark Add resiliency
+
+
+RDD (Resilient Distributed Dataset)
+Spark works on the concept of RDDs i.e. “Resilient Distributed Dataset”. It is an Immutable, Fault Tolerant collection of objects partitioned across several nodes. With the concept of lineage RDDs can rebuild a lost partition in case of any node failure.
+
+– In Spark initial versions RDDs was the only way for users to interact with Spark with its low-level API that provides various Transformations and Actions.
+
+– With Spark 2.x new DataFrames and DataSets were introduced which are also built on top of RDDs, but provide more high-level structured APIs and more benefits over RDDs.
+
+– But at the Spark core ultimately all Spark computation operations and high-level DataFrames APIs are converted into low-level RDD based Scala bytecode, which are executed in Spark Executors.
+
+In Spark RDDs and DataFrames are immutable, so to perform several operations on the data present in a DataFrame, it is transformed to a new DataFrame without modifying the existing DataFrame.
+
+–> There are two types of Transformations:
+
+1. Narrow Transformations: applies on a single partition, for example: filter(), map(), contains() can operate in single partition and no data exchange happens here between partitions.
+Functions such as map(), mapPartition(), flatMap(), filter(), union() are some examples of narrow transformation
+2. Wide Transformations: applies on a multiple partitions, for example: groupBy(), reduceBy(), orderBy() requires to read other partitions and exchange data between partitions which is called shuffle and Spark has to write data to disk.
+ Functions such as groupByKey(), aggregateByKey(), aggregate(), join(), repartition()
+
+Lazy Evaluation
+Both the above Narrow & Wide Transformation types are lazy in nature, means that until and unless any action is performed over these transformations the execution of all these transformations is delayed and Lazily evaluated. Due to this delay the Spark execution engine gets a whole view of all the chained transformations and ample time to optimize your query.
+ 
+
+Actions
+As Transformations don’t execute anything on their own, so to execute the chain of Transformations Spark needs some Actions to perform and triggers the Transformations.
+
+Some examples of Actions are: count(), collect(), show(), save(), etc. to perform different operations like: to collect data of objects, show calculated data in a console, and write data to a file or target data sources.
+
+
+Example : 
+
+package com.sparkbyexamples.spark.rdd
+
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName('SparkByExamples.com').getOrCreate()
+rdd = spark.sparkContext.textFile("/apps/sparkbyexamples/src/pyspark-examples/data.txt")
+
+for element in rdd.collect():
+    print(element)
+
+#Flatmap    
+rdd2=rdd.flatMap(lambda x: x.split(" "))
+for element in rdd2.collect():
+    print(element)
+#map
+rdd3=rdd2.map(lambda x: (x,1))
+for element in rdd3.collect():
+    print(element)
+#reduceByKey
+rdd4=rdd3.reduceByKey(lambda a,b: a+b)
+for element in rdd4.collect():
+    print(element)
+#map
+rdd5 = rdd4.map(lambda x: (x[1],x[0])).sortByKey()
+for element in rdd5.collect():
+    print(element)
+#filter
+rdd6 = rdd5.filter(lambda x : 'a' in x[1])
+for element in rdd6.collect():
+    print(element)
+
+
+Broadcast variable:
+
+First of all, Broadcast variables are designed to be shared throughout a cluster and, 
+at the same time have to be able to fit in memory on one machine.
+
+Secondly, broadcast variables are immutable, so they cannot be changed later on (in case take a look at accumulators).
+
+Efficiency: Inside Spark, all the nodes in the cluster try to distribute the variable as quickly and 
+efficiently as possible by downloading what they can, and uploading what they can. This makes them much 
+faster than one node having to try and do everything and push the data to all nodes.
+
+Example: 
+
+def modify_broadcast(j,test):
+  main=j[0]
+  context=j[1]
+  test.value[main]=test.value[main]+1
+  test.value[context]=test.value[context]+1
+  return test.value
+
+test = sc.parallelize([(1),(2),(3),(4)]).zipWithIndex().map(lambda x: (x[1],x[0]))
+test = sc.broadcast(test.collectAsMap())
+
+
+print(test.value[0])
+coocurence = sc.parallelize([(0,1),(1,2),(3,2)]).map(lambda x: modify_broadcast(x,test))
